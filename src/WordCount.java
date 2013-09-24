@@ -1,4 +1,6 @@
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
@@ -22,6 +24,8 @@ import java.util.TreeSet;
 public class WordCount {
     private static int wordLength;
     private static String prefix;
+    private static FileSystem fs;
+    private static String outputPath;
 
     public static void main(String[] args) throws Exception {
         boolean hasCombiner = false;
@@ -40,6 +44,8 @@ public class WordCount {
         long startTime = System.currentTimeMillis();
         Configuration conf = new Configuration();
 
+        fs = FileSystem.get(conf);
+
         Job job = new Job(conf, "WordCount");
 
         job.setOutputKeyClass(Text.class);
@@ -56,7 +62,9 @@ public class WordCount {
         job.setOutputFormatClass(TextOutputFormat.class);
 
         FileInputFormat.addInputPath(job, new Path(args[1]));
-        FileOutputFormat.setOutputPath(job, new Path(args[3]));
+
+        outputPath = args[3];
+        FileOutputFormat.setOutputPath(job, new Path(outputPath));
 
         job.waitForCompletion(true);
         long endTime = System.currentTimeMillis();
@@ -99,9 +107,11 @@ public class WordCount {
 
         @Override
         protected void cleanup(Context context) throws IOException, InterruptedException {
+            FSDataOutputStream out = fs.create(new Path(outputPath + "/a_output"));
             for (WordCountNode wordCount : mostFrequentWords) {
-                context.write(wordCount.word, new IntWritable(wordCount.count));
+                out.writeChars(wordCount.word.toString() + '\t' + wordCount.count + '\n');
             }
+            out.close();
         }
 
         private class WordCountNode implements Comparable<WordCountNode> {
