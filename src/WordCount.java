@@ -22,10 +22,11 @@ import java.util.TreeSet;
  * Time: 8:20 PM
  */
 public class WordCount {
-    private static int wordLength;
+    private static int wordLength = -1;
     private static String prefix;
     private static FileSystem fs;
     private static String outputPath;
+    private static String outputFilesDirectory;
 
     public static void main(String[] args) throws Exception {
         boolean hasCombiner = false;
@@ -41,7 +42,6 @@ public class WordCount {
             prefix = args[++i];
         }
 
-        long startTime = System.currentTimeMillis();
         Configuration conf = new Configuration();
 
         fs = FileSystem.get(conf);
@@ -54,10 +54,6 @@ public class WordCount {
         job.setMapperClass(Map.class);
         job.setReducerClass(Reduce.class);
 
-        if (hasCombiner) {
-            job.setCombinerClass(Combine.class);
-        }
-
         job.setInputFormatClass(TextInputFormat.class);
         job.setOutputFormatClass(TextOutputFormat.class);
 
@@ -65,11 +61,39 @@ public class WordCount {
 
         outputPath = args[3];
         FileOutputFormat.setOutputPath(job, new Path(outputPath));
+        outputFilesDirectory = outputPath + "Txt";
 
+        long startTime = System.currentTimeMillis();
         job.waitForCompletion(true);
         long endTime = System.currentTimeMillis();
         long seconds = (endTime - startTime) / 1000;
-        System.out.println(seconds);
+
+        if (hasCombiner) {
+            Job combinerJob = new Job(conf, "WordCount");
+
+            combinerJob.setOutputKeyClass(Text.class);
+            combinerJob.setOutputValueClass(IntWritable.class);
+
+            combinerJob.setMapperClass(Map.class);
+            combinerJob.setReducerClass(Reduce.class);
+            combinerJob.setCombinerClass(Combine.class);
+
+            combinerJob.setInputFormatClass(TextInputFormat.class);
+            combinerJob.setOutputFormatClass(TextOutputFormat.class);
+
+            FileInputFormat.addInputPath(combinerJob, new Path(args[1]));
+
+            FileOutputFormat.setOutputPath(combinerJob, new Path(outputPath + "Combiner"));
+
+            long startTimeCombiner = System.currentTimeMillis();
+            combinerJob.waitForCompletion(true);
+            long endTimeCombiner = System.currentTimeMillis();
+            long secondsCombiner = (endTimeCombiner - startTimeCombiner) / 1000;
+
+            FSDataOutputStream out = fs.create(new Path(outputFilesDirectory + "/b_output.txt"));
+            out.writeChars(seconds + "\t" + secondsCombiner);
+            out.close();
+        }
     }
 
     public static class Map extends Mapper<LongWritable, Text, Text, IntWritable> {
@@ -92,6 +116,8 @@ public class WordCount {
     public static class Reduce extends Reducer<Text, IntWritable, Text, IntWritable> {
 
         private TreeSet<WordCountNode> mostFrequentWords = new TreeSet<WordCountNode>();
+        private TreeSet<WordCountNode> mostFrequentWordsWordLength = new TreeSet<WordCountNode>();
+        private TreeSet<WordCountNode> mostFrequentWordsPrefix = new TreeSet<WordCountNode>();
 
         public void reduce(Text key, Iterable<IntWritable> values, Context context)
                 throws IOException, InterruptedException {
@@ -99,26 +125,73 @@ public class WordCount {
             for (IntWritable val : values) {
                 sum += val.get();
             }
-            mostFrequentWords.add(new WordCountNode(new Text(key), sum));
-            if (mostFrequentWords.size() > 100) {
-                mostFrequentWords.pollLast();
+            String word = key.toString();
+            getMostFrequentWords(mostFrequentWords, word, sum);
+
+            if (wordLength != -1) {
+                reduceWordLength(word, sum);
+            }
+
+            if (prefix != null) {
+                reducePrefix(word, sum);
+            }
+        }
+
+        private void reducePrefix(String word, int sum) {
+            if (word.startsWith(prefix)) {
+                getMostFrequentWords(mostFrequentWordsPrefix, word, sum);
             }
         }
 
         @Override
         protected void cleanup(Context context) throws IOException, InterruptedException {
-            FSDataOutputStream out = fs.create(new Path(outputPath + "/a_output"));
-            for (WordCountNode wordCount : mostFrequentWords) {
-                out.writeChars(wordCount.word.toString() + '\t' + wordCount.count + '\n');
+            write("a_output.txt", mostFrequentWords);
+
+            if (wordLength != -1) {
+                cleanupWordLength();
+            }
+
+            if (prefix != null) {
+                cleanupPrefix();
+            }
+        }
+
+        private void cleanupPrefix() throws IOException {
+            write("d_output.txt", mostFrequentWordsPrefix);
+        }
+
+        private void reduceWordLength(String word, int sum) {
+            if (word.length() == wordLength) {
+                getMostFrequentWords(mostFrequentWordsWordLength, word, sum);
+            }
+        }
+
+        private void getMostFrequentWords(TreeSet<WordCountNode> priorityQueue, String word, int sum) {
+            priorityQueue.add(new WordCountNode(word, sum));
+            if (priorityQueue.size() > 100) {
+                priorityQueue.pollFirst();
+            }
+        }
+
+        private void cleanupWordLength() throws IOException {
+            write("c_output.txt", mostFrequentWordsWordLength);
+        }
+
+        private void write(String outputFile, TreeSet<WordCountNode> priorityQueue) throws IOException {
+            FSDataOutputStream out = fs.create(new Path(outputFilesDirectory + "/" + outputFile));
+            while (priorityQueue.size() > 0) {
+                WordCountNode wordCount = priorityQueue.pollLast();
+                out.writeChars(wordCount.word + '\t' + wordCount.count +
+                        (priorityQueue.isEmpty() ? "" : '\n'));
             }
             out.close();
         }
 
         private class WordCountNode implements Comparable<WordCountNode> {
-            Text word;
+            String word;
             Integer count;
 
-            WordCountNode(Text word, Integer count) {
+            WordCountNode(String word, Integer count) {
                 this.word = word;
                 this.count = count;
             }
@@ -126,9 +199,9 @@ public class WordCount {
             @Override
             public int compareTo(WordCountNode wordCountNode) {
                 if (this.count > wordCountNode.count) {
-                    return -1;
+                    return 1;
                 }
-                return 1;
+                return -1;
             }
         }
     }
