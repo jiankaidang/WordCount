@@ -69,7 +69,7 @@ public class WordCount {
         long seconds = (endTime - startTime) / 1000;
 
         if (hasCombiner) {
-            Job combinerJob = new Job(conf, "WordCount");
+            Job combinerJob = new Job(conf, "WordCountCombiner");
 
             combinerJob.setOutputKeyClass(Text.class);
             combinerJob.setOutputValueClass(IntWritable.class);
