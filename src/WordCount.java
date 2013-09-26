@@ -22,30 +22,27 @@ import java.util.TreeSet;
  * Time: 8:20 PM
  */
 public class WordCount {
-    private static int wordLength = -1;
-    private static String prefix;
-    private static FileSystem fs;
-    private static String outputFilesDirectory;
 
     public static void main(String[] args) throws Exception {
         boolean hasCombiner = false;
+
+        Configuration conf = new Configuration();
+
         for (int i = 4; i < args.length; i++) {
             if (args[i].equals("-combiner")) {
                 hasCombiner = true;
                 continue;
             }
             if (args[i].equals("-word-length")) {
-                wordLength = Integer.parseInt(args[++i]);
+                conf.setInt("wordLength", Integer.parseInt(args[++i]));
                 continue;
             }
-            prefix = args[++i];
+            conf.set("prefix", args[++i]);
         }
 
-        Configuration conf = new Configuration();
-
-        fs = FileSystem.get(conf);
-
         Job job = new Job(conf, "WordCount");
+
+        job.setNumReduceTasks(1);
 
         job.setJarByClass(WordCount.class);
 
@@ -63,7 +60,7 @@ public class WordCount {
 
         String outputPath = args[3];
         FileOutputFormat.setOutputPath(job, new Path(outputPath));
-        outputFilesDirectory = outputPath + "Txt";
+        String outputFilesDirectory = outputPath + "Txt";
 
         long startTime = System.currentTimeMillis();
         job.waitForCompletion(true);
@@ -72,6 +69,8 @@ public class WordCount {
 
         if (hasCombiner) {
             Job combinerJob = new Job(conf, "WordCountCombiner");
+
+            combinerJob.setNumReduceTasks(1);
 
             combinerJob.setJarByClass(WordCount.class);
 
@@ -94,7 +93,9 @@ public class WordCount {
             long endTimeCombiner = System.currentTimeMillis();
             long secondsCombiner = (endTimeCombiner - startTimeCombiner) / 1000;
 
-            FSDataOutputStream out = fs.create(new Path(outputFilesDirectory + "/b_output.txt"));
+            FileSystem fs = FileSystem.get(new Path(outputFilesDirectory).toUri(), conf);
+
+            FSDataOutputStream out = fs.create(new Path(outputFilesDirectory + "/b_output"));
             out.writeChars(seconds + "\t" + secondsCombiner);
             out.close();
         }
@@ -122,6 +123,10 @@ public class WordCount {
         private TreeSet<WordCountNode> mostFrequentWords = new TreeSet<WordCountNode>();
         private TreeSet<WordCountNode> mostFrequentWordsWordLength = new TreeSet<WordCountNode>();
         private TreeSet<WordCountNode> mostFrequentWordsPrefix = new TreeSet<WordCountNode>();
+        private Path outputFilesDirectory;
+        private FileSystem fs;
+        private int wordLength;
+        private String prefix;
 
         public void reduce(Text key, Iterable<IntWritable> values, Context context)
                 throws IOException, InterruptedException {
@@ -131,6 +136,11 @@ public class WordCount {
             }
             String word = key.toString();
             getMostFrequentWords(mostFrequentWords, word, sum);
+
+            Configuration configuration = context.getConfiguration();
+
+            wordLength = configuration.getInt("wordLength", -1);
+            prefix = configuration.get("prefix");
 
             if (wordLength != -1) {
                 reduceWordLength(word, sum);
@@ -149,7 +159,10 @@ public class WordCount {
 
         @Override
         protected void cleanup(Context context) throws IOException, InterruptedException {
-            write("a_output.txt", mostFrequentWords);
+            outputFilesDirectory = new Path(FileOutputFormat.getOutputPath(context).getParent(), "outputTxt");
+            fs = FileSystem.get(outputFilesDirectory.toUri(), context.getConfiguration());
+
+            write("a_output", mostFrequentWords);
 
             if (wordLength != -1) {
                 cleanupWordLength();
@@ -161,7 +174,7 @@ public class WordCount {
         }
 
         private void cleanupPrefix() throws IOException {
-            write("d_output.txt", mostFrequentWordsPrefix);
+            write("d_output", mostFrequentWordsPrefix);
         }
 
         private void reduceWordLength(String word, int sum) {
@@ -178,11 +191,11 @@ public class WordCount {
         }
 
         private void cleanupWordLength() throws IOException {
-            write("c_output.txt", mostFrequentWordsWordLength);
+            write("c_output", mostFrequentWordsWordLength);
         }
 
         private void write(String outputFile, TreeSet<WordCountNode> priorityQueue) throws IOException {
-            FSDataOutputStream out = fs.create(new Path(outputFilesDirectory + "/" + outputFile));
+            FSDataOutputStream out = fs.create(new Path(outputFilesDirectory, outputFile));
             while (priorityQueue.size() > 0) {
                 WordCountNode wordCount = priorityQueue.pollLast();
                 out.writeChars(wordCount.word + '\t' + wordCount.count +
