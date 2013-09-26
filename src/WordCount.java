@@ -25,7 +25,6 @@ public class WordCount {
     private static int wordLength = -1;
     private static String prefix;
     private static FileSystem fs;
-    private static String outputPath;
     private static String outputFilesDirectory;
 
     public static void main(String[] args) throws Exception {
@@ -48,10 +47,13 @@ public class WordCount {
 
         Job job = new Job(conf, "WordCount");
 
+        job.setJarByClass(WordCount.class);
+
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(IntWritable.class);
 
         job.setMapperClass(Map.class);
+
         job.setReducerClass(Reduce.class);
 
         job.setInputFormatClass(TextInputFormat.class);
@@ -59,7 +61,7 @@ public class WordCount {
 
         FileInputFormat.addInputPath(job, new Path(args[1]));
 
-        outputPath = args[3];
+        String outputPath = args[3];
         FileOutputFormat.setOutputPath(job, new Path(outputPath));
         outputFilesDirectory = outputPath + "Txt";
 
@@ -70,6 +72,8 @@ public class WordCount {
 
         if (hasCombiner) {
             Job combinerJob = new Job(conf, "WordCountCombiner");
+
+            combinerJob.setJarByClass(WordCount.class);
 
             combinerJob.setOutputKeyClass(Text.class);
             combinerJob.setOutputValueClass(IntWritable.class);
