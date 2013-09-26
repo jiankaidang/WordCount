@@ -151,9 +151,22 @@ public class WordCount {
             }
         }
 
+        private void reduceWordLength(String word, int sum) {
+            if (word.length() == wordLength) {
+                getMostFrequentWords(mostFrequentWordsWordLength, word, sum);
+            }
+        }
+
         private void reducePrefix(String word, int sum) {
             if (word.startsWith(prefix)) {
                 getMostFrequentWords(mostFrequentWordsPrefix, word, sum);
+            }
+        }
+
+        private void getMostFrequentWords(TreeSet<WordCountNode> priorityQueue, String word, int sum) {
+            priorityQueue.add(new WordCountNode(word, sum));
+            if (priorityQueue.size() > 100) {
+                priorityQueue.pollFirst();
             }
         }
 
@@ -173,25 +186,12 @@ public class WordCount {
             }
         }
 
-        private void cleanupPrefix() throws IOException {
-            write("d_output", mostFrequentWordsPrefix);
-        }
-
-        private void reduceWordLength(String word, int sum) {
-            if (word.length() == wordLength) {
-                getMostFrequentWords(mostFrequentWordsWordLength, word, sum);
-            }
-        }
-
-        private void getMostFrequentWords(TreeSet<WordCountNode> priorityQueue, String word, int sum) {
-            priorityQueue.add(new WordCountNode(word, sum));
-            if (priorityQueue.size() > 100) {
-                priorityQueue.pollFirst();
-            }
-        }
-
         private void cleanupWordLength() throws IOException {
             write("c_output", mostFrequentWordsWordLength);
+        }
+
+        private void cleanupPrefix() throws IOException {
+            write("d_output", mostFrequentWordsPrefix);
         }
 
         private void write(String outputFile, TreeSet<WordCountNode> priorityQueue) throws IOException {
