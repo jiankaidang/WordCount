@@ -111,9 +111,11 @@ public class WordCount {
                 return;
             }
             String[] result = line.split("\\s+");
-            for (String aResult : result) {
-                word.set(aResult);
-                context.write(word, one);
+            for (String str : result) {
+                if (str.matches("^[a-zA-Z\\d']+$")) {
+                    word.set(str);
+                    context.write(word, one);
+                }
             }
         }
     }
